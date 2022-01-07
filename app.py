@@ -3,6 +3,7 @@ from telebot.apihelper import send_message
 from telebot import apihelper
 from telebot.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from db import db, BOT_TOKEN
+import datetime
 import telebot
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -145,7 +146,6 @@ def handle_callback(call):
     chat_id = call.message.chat.id
     user = call.message.chat.first_name
     data = call.data
-
     intent = data.split()[0:][0]
 
     if intent == "Chosen":
@@ -183,28 +183,32 @@ def receive_gpa(chat_id):
     bot.register_next_step_handler(message, process_receive_gpa)
 
 def process_receive_gpa(message):
-    new_gpa = float(message.text)
+    try:
+        new_gpa = float(message.text)
 
-    if new_gpa < 0 or new_gpa > 4:
-        msg = "Please enter a valid GPA."
-        bot.register_next_step_handler(msg, process_receive_gpa)
-        return
+        if new_gpa < 0 or new_gpa > 4:
+            msg = "Please enter a valid GPA."
+            bot.register_next_step_handler(msg, process_receive_gpa)
+            return
 
-    chat_id = message.chat.id
-    old_gpa = db.covid.find_one({"private_chat_id": chat_id})["targetgpa"]
-        
-    if old_gpa > new_gpa:
-        kink = db.covid.find_one({"private_chat_id": chat_id})["kink"]
-        group_id = db.covid.find_one({"private_chat_id": chat_id})["group_id"]
-        name = db.covid.find_one({"private_chat_id": chat_id})["name"]
-        confession = f'{name} has failed to achieve his GPA and he has a confession to make. \n\n\n\n {kink}'
-        bot.send_message(group_id, confession)
-        bot.send_message(chat_id, "As agreed, we will be sending your confession onto the page.")
+        chat_id = message.chat.id
+        old_gpa = db.covid.find_one({"private_chat_id": chat_id})["targetgpa"]
+            
+        if old_gpa > new_gpa:
+            kink = db.covid.find_one({"private_chat_id": chat_id})["kink"]
+            group_id = db.covid.find_one({"private_chat_id": chat_id})["group_id"]
+            name = db.covid.find_one({"private_chat_id": chat_id})["name"]
+            confession = f'{name} has failed to achieve his GPA and he has a confession to make. \n\n\n\n {kink}'
+            bot.send_message(group_id, confession)
+            bot.send_message(chat_id, "As agreed, we will be sending your confession onto the page.")
 
-    else:
-        bot.send_message(chat_id, "Congrats on achieving your goal! I am so proud of you.")
+        else:
+            bot.send_message(chat_id, "Congrats on achieving your goal! I am so proud of you.")
 
-    db.covid.find_one_and_delete({"private_chat_id": chat_id})
+        db.covid.find_one_and_delete({"private_chat_id": chat_id})
+
+    except Exception:
+        bot.send_message(message.chat.id, "There was an error with processing your command.")
 
 
 
