@@ -7,7 +7,8 @@ import telebot
 
 bot = telebot.TeleBot(BOT_TOKEN)
 bot.set_my_commands([
-    BotCommand("start", "Start up the bot")
+    BotCommand("start", "Start up the bot"),
+    BotCommand("update_gpa", "Update your GPA here!")
 ])
 
 user_dict = {}
@@ -145,10 +146,7 @@ def handle_callback(call):
     user = call.message.chat.first_name
     data = call.data
 
-    splitted = data.split()
     intent = data.split()[0:][0]
-    grp_name = ' '.join(splitted[1:])
-
 
     if intent == "Chosen":
         
@@ -168,13 +166,48 @@ def handle_callback(call):
 def send_message_logic(chat_id, group_name):    
     bot.send_message(chat_id, f'You have chosen the group {group_name} to post the images.')
     group_id = db.project.find_one({"group_name": group_name})["group_id"]
-    print(group_id)
-
-    
     user_dict["group_name"] = group_name
     user_dict["group_id"] = group_id
+    user_dict["private_chat_id"] = chat_id
     retrieve_user_info(chat_id)
     return
+
+# ========================== Section 2 of the Code =============================== #
+@bot.message_handler(commands=["update_gpa"])
+def handle_update(message):
+    chat_id = message.chat.id
+    receive_gpa(chat_id)
+
+def receive_gpa(chat_id):
+    message = bot.send_message(chat_id, "Well done for completing this Semester. Now the time has come. What is your GPA")
+    bot.register_next_step_handler(message, process_receive_gpa)
+
+def process_receive_gpa(message):
+    new_gpa = float(message.text)
+
+    if new_gpa < 0 or new_gpa > 4:
+        msg = "Please enter a valid GPA."
+        bot.register_next_step_handler(msg, process_receive_gpa)
+        return
+
+    chat_id = message.chat.id
+    old_gpa = db.covid.find_one({"private_chat_id": chat_id})["targetgpa"]
+        
+    if old_gpa > new_gpa:
+        kink = db.covid.find_one({"private_chat_id": chat_id})["kink"]
+        group_id = db.covid.find_one({"private_chat_id": chat_id})["group_id"]
+        name = db.covid.find_one({"private_chat_id": chat_id})["name"]
+        confession = f'{name} has failed to achieve his GPA and he has a confession to make. \n\n\n\n {kink}'
+        bot.send_message(group_id, confession)
+        bot.send_message(chat_id, "As agreed, we will be sending your confession onto the page.")
+
+    else:
+        bot.send_message(chat_id, "Congrats on achieving your goal! I am so proud of you.")
+
+    db.covid.find_one_and_delete({"private_chat_id": chat_id})
+
+
+
 
 
 bot.infinity_polling()
