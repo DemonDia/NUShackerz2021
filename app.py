@@ -173,14 +173,27 @@ def send_message_logic(chat_id, group_name):
     return
 
 # ========================== Section 2 of the Code =============================== #
+
+# handle_update(message)
+# param[in] message: The text input by the user
+#
+# Function: Used to handle the "/update" command
+
 @bot.message_handler(commands=["update_gpa"])
 def handle_update(message):
     chat_id = message.chat.id
-    receive_gpa(chat_id)
 
-def receive_gpa(chat_id):
+    if db.covid.find_one({"private_chat_id": chat_id}) == None:
+        bot.send_message(chat_id, "Please press /start to begin the bot.")
+        return
+
     message = bot.send_message(chat_id, "Well done for completing this Semester. Now the time has come. What is your GPA")
     bot.register_next_step_handler(message, process_receive_gpa)
+    
+# process_receive_gpa(message)
+# param[in] message: The text input by the user.
+#
+# Function: Logic catered to processing the GPA
 
 def process_receive_gpa(message):
     try:
