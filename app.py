@@ -1,14 +1,23 @@
+from pymongo import aggregation
 from telebot.apihelper import send_message
 from telebot import apihelper
-from credentials import BOT_TOKEN
 from telebot.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
-from db import db
+from db import db, BOT_TOKEN
 import telebot
 
 bot = telebot.TeleBot(BOT_TOKEN)
 bot.set_my_commands([
     BotCommand("start", "Start up the bot")
 ])
+
+class User:
+    def __init__(self):
+        self.name = None
+        self.gpa = None
+        self.kink = None
+
+user_dict = {}
+
 
 # handle_start(message)
 # param[in] message: The message sent by the user.
@@ -34,15 +43,64 @@ def handle_start(message):
             bot.send_message(chat_id, start_message)
             return
 
-    
-        buttons = []
-        for key in list(db.project.find()):
-            row = []
-            button = InlineKeyboardButton(key["group_name"], callback_data=f'Chosen Group {key["group_name"]}')
-            row.append(button)
-            buttons.append(row)
-        start_message += "Select a group that you will be like to post in."
-        bot.send_message(chat_id, start_message, reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            buttons = []
+            for key in list(db.project.find()):
+                row = []
+                button = InlineKeyboardButton(key["group_name"], callback_data=f'Chosen Group {key["group_name"]}')
+                row.append(button)
+                buttons.append(row)
+            start_message += "Select a group that you will be like to post in."
+            bot.send_message(chat_id, start_message, reply_markup=InlineKeyboardMarkup(buttons))
+
+def retrieve_user_info(chat_id):
+    msg = bot.send_message(chat_id, "Hi! How do we address you?")
+    bot.register_next_step_handler(msg, process_name_step)
+
+def process_name_step(message):
+    try:
+        name = message.text
+        user = User(name)
+        user_dict[message.chat.id] = user
+        msg = bot.send_message(message.chat.id, "Write down your name")
+        bot.register_next_step_handler(msg, process_gpa_step)
+
+    except Exception as e:
+        bot.reply_to(message, "Error!")
+
+def process_gpa_step(message):
+    try:
+        gpa = message.text
+        if not gpa.isdecimal():
+            msg = bot.reply_to(message, "Please input your GPA in a decimal.")
+            bot.register_next_step_handler(msg, process_gpa_step)
+
+        if gpa < 0 or gpa > 4.0:
+            msg = bot.reply_to(message, "Please input a valid GPA.")
+            bot.register_next_step_handler(msg, process_gpa_step)
+
+        user = user_dict[message.chat.id]
+        user.gpa = gpa
+
+        msg = bot.send_message(message.chat.id, "What secrets would you like to share?")
+        bot.register_next_step_handler(msg, process_kink_step)
+
+    except Exception as e:
+        bot.reply_to(message, "Error!")
+        
+def process_kink_step(message):
+    try:
+        kink = message.text
+        user = user_dict[message.chat.id]
+        bot.send_message(message.chat.id, "Information saved successfully! Thanks for filling up the information")
+
+    except Exception as e:
+        bot.reply_to(message, "Error!")
+
+
+
+
+
 
 
 ###### Function used to handle Callback #########
@@ -64,18 +122,9 @@ def handle_callback(call):
 def send_message_logic(chat_id, group_name, user):
     information = {"name": user}
     db.project.find_one_and_update({"group_name": group_name}, {"$set": {"user": information}})
-    bot.send_message(chat_id, f'You have chosen the group {group_name} to post the images. To proceed with uploading of seccrets, type /secrets')
+    bot.send_message(chat_id, f'You have chosen the group {group_name} to post the images.')
+    retrieve_user_info(chat_id)
     return
 
-@bot.message_handler(func=lambda message: message.text is not None, content_types=["text"])
-def handle_text_doc(message):
-    chat_id = message.chat.id
-
-    if message.chat.type == "private":
-        if "secret" not in message.text:
-            bot.send_message(chat_id, "Sorry I do not understand the message")
-            return
-        else:
-            bot.reply_to(message, f'Your secret of {message.text} had been stored')
 
 bot.infinity_polling()
