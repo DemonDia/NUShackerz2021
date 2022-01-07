@@ -10,17 +10,22 @@ bot.set_my_commands([
     BotCommand("start", "Start up the bot")
 ])
 
-class User:
-    def __init__(self):
-        self.name = None
-        self.gpa = None
-        self.kink = None
-
 user_dict = {}
 
+# ========================== Section 1 of the Code =============================== #
 
 # handle_start(message)
 # param[in] message: The message sent by the user.
+# 
+# Function: Used to set up the user. We require the user to set up
+# the Telegram Bot inside first before the user sets up his / her 
+# account. Used to handle the /start command.
+#
+# If the chat type is private, check whether a group has been 
+# registered. If there are no groups, request user to start the 
+# bot in a group. If register, we would ask the user which group
+# he would like to be in.
+
 
 @bot.message_handler(commands=["start"])
 def handle_start(message):
@@ -39,7 +44,7 @@ def handle_start(message):
 
     else:
         if len(list(db.project.find())) == 0:
-            start_message += "The bot has not been set up in a group yet."
+            start_message += "No groups found. Please add the bot into a group of your choice and start it."
             bot.send_message(chat_id, start_message)
             return
 
@@ -53,78 +58,128 @@ def handle_start(message):
             start_message += "Select a group that you will be like to post in."
             bot.send_message(chat_id, start_message, reply_markup=InlineKeyboardMarkup(buttons))
 
+
+# retrieve_user_info(chat_id)
+# param[in] chat_id: The id of the private chat with the bot.
+# 
+# Function: This is the starting point of the register_next_step_handler.
+
 def retrieve_user_info(chat_id):
     msg = bot.send_message(chat_id, "Hi! How do we address you?")
     bot.register_next_step_handler(msg, process_name_step)
 
+
+# process_name_step(message)
+# param[in] message: The message that was inputted by the user.
+# 
+# Function: Saves the name of the user in the user_dict and 
+# proceeds with the next step. If an error is thrown, repeat 
+# the whole process again.
+
 def process_name_step(message):
     try:
         name = message.text
-        user = User(name)
-        user_dict[message.chat.id] = user
-        msg = bot.send_message(message.chat.id, "Write down your name")
+        user_dict["name"] = name
+        msg = bot.send_message(message.chat.id, "Write down your target GPA")
         bot.register_next_step_handler(msg, process_gpa_step)
 
-    except Exception as e:
-        bot.reply_to(message, "Error!")
+    except Exception:
+        msg = bot.reply_to(message, "Please introduce yourself again")
+        bot.register_next_step_handler(msg, process_name_step)
+
+# process_gpa_step(message)
+# param[in] message: The message that was inputted by the user.
+#
+# Function: Saves the target gpa of the user in the user_dict 
+# and proceeds with the next step. If an error is thrown, repeat 
+# the whole process again.
 
 def process_gpa_step(message):
     try:
-        gpa = message.text
-        if not gpa.isdecimal():
-            msg = bot.reply_to(message, "Please input your GPA in a decimal.")
-            bot.register_next_step_handler(msg, process_gpa_step)
-
+        gpa = float(message.text)
+        
         if gpa < 0 or gpa > 4.0:
-            msg = bot.reply_to(message, "Please input a valid GPA.")
+            msg = bot.reply_to(message, "Please input a valid target GPA.")
             bot.register_next_step_handler(msg, process_gpa_step)
+            return
 
-        user = user_dict[message.chat.id]
-        user.gpa = gpa
-
+        user_dict["targetgpa"] = gpa
         msg = bot.send_message(message.chat.id, "What secrets would you like to share?")
         bot.register_next_step_handler(msg, process_kink_step)
 
-    except Exception as e:
-        bot.reply_to(message, "Error!")
+    except Exception:
+        msg = bot.reply_to(message, "Please re-enter your GPA! Do note that the GPA must be a number between 0 to 4.")
+        bot.register_next_step_handler(msg, process_gpa_step)
         
+# process_kink_step(message)
+# param[in] message: The text that the user had inputted.
+#
+# Function: 
+# 1. Stores the kink in the user dictionary.
+# 2. CREATE a document in the database with the user_dict.
+# 3. Delete the group information in the "project" collection. 
+# If another user would like to start the whole thing again in
+# the same group, he would have to start the bot again in the
+# group.
+
 def process_kink_step(message):
     try:
         kink = message.text
-        user = user_dict[message.chat.id]
+        user_dict["kink"] = kink
+        db.covid.insert_one(user_dict)
+        group_id = user_dict["group_id"]
+        db.project.find_one_and_delete({"group_id": group_id})
+
         bot.send_message(message.chat.id, "Information saved successfully! Thanks for filling up the information")
 
-    except Exception as e:
-        bot.reply_to(message, "Error!")
-
-
-
-
-
-
-
-###### Function used to handle Callback #########
+    except Exception:
+        msg = bot.reply_to(message, "We had encountered an error in saving your secret. Please tell us your secret again.")
+        bot.register_next_step_handler(msg, process_kink_step)
+        
+# handle_callback(call)
+# Function: This function is used to handle callbacks
+# if there are any.
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     chat_id = call.message.chat.id
     user = call.message.chat.first_name
     data = call.data
 
+    splitted = data.split()
     intent = data.split()[0:][0]
+    grp_name = ' '.join(splitted[1:])
+
 
     if intent == "Chosen":
+        
         group_name = data.split()[0:][2]
-        send_message_logic(chat_id, group_name, user)
+        send_message_logic(chat_id, group_name)
         return
 
     return
 
-def send_message_logic(chat_id, group_name, user):
-    information = {"name": user}
-    db.project.find_one_and_update({"group_name": group_name}, {"$set": {"user": information}})
+# send_message_logic(chat_id, group_name)
+# param[in] chat_id : The id of the private chat with the bot
+# param[in] group_name: The name of the group that the user has selected
+# 
+# Step 1: Search for the Group ID in the "project" collection with the group name.
+# Step 2: Save the group_id and group_name in the user_dict
+# Step 3: Runs the retrieve_user_info
+def send_message_logic(chat_id, group_name):    
     bot.send_message(chat_id, f'You have chosen the group {group_name} to post the images.')
+    group_id = db.project.find_one({"group_name": group_name})["group_id"]
+    print(group_id)
+
+    
+    user_dict["group_name"] = group_name
+    user_dict["group_id"] = group_id
     retrieve_user_info(chat_id)
     return
 
 
 bot.infinity_polling()
+
+# TODO:
+# 1. Find a way to convert the spacing in the group name into
+# an underscore("_").  (no need. it accepts grp names with spacing alr)
+# 2. Change the message
