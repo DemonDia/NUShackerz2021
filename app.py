@@ -143,15 +143,21 @@ def process_kink_step(message):
 # if there are any.
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
+    
     chat_id = call.message.chat.id
+    print(chat_id)
     user = call.message.chat.first_name
     data = call.data
-    intent = data.split()[0:][0]
+    splitted = data.split()
+    print(splitted)
+    intent = data.split()[0]
+    grp_name = ' '.join(splitted[2:])
 
     if intent == "Chosen":
+        print(grp_name)
         
-        group_name = data.split()[0:][2]
-        send_message_logic(chat_id, group_name)
+        # group_name = data.split()[0:][2]
+        send_message_logic(chat_id, grp_name)
         return
 
     return
@@ -228,8 +234,3 @@ def process_receive_gpa(message):
 
 
 bot.infinity_polling()
-
-# TODO:
-# 1. Find a way to convert the spacing in the group name into
-# an underscore("_").  (no need. it accepts grp names with spacing alr)
-# 2. Change the message
