@@ -1,4 +1,5 @@
 from telebot.apihelper import send_message
+from telebot import apihelper
 from credentials import BOT_TOKEN
 from telebot.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from db import db
@@ -9,13 +10,15 @@ bot.set_my_commands([
     BotCommand("start", "Start up the bot")
 ])
 
+# handle_start(message)
+# param[in] message: The message sent by the user.
+
 @bot.message_handler(commands=["start"])
 def handle_start(message):
     chat_id = message.chat.id
     start_message = ""
 
-    # Sets up a Collection for the Group if there is none. Otherwise, proceed with the user side.
-    if message.chat.type == "group":
+    if message.chat.type != "private":
         if db.project.find_one({"group_id": chat_id}) == None:
             db.project.insert_one({
                 "group_id": chat_id,
@@ -25,22 +28,22 @@ def handle_start(message):
         bot.send_message(chat_id, start_message)
         return
 
-    elif message.chat.type == "private":
+    else:
         if len(list(db.project.find())) == 0:
             start_message += "The bot has not been set up in a group yet."
             bot.send_message(chat_id, start_message)
             return
 
-        else: 
-            buttons = []
-            for key in list(db.project.find()):
-                row = []
-                button = InlineKeyboardButton(key["group_name"], callback_data=f'Chosen Group {key["group_name"]}')
-                row.append(button)
-                buttons.append(row)
-            start_message += "Select a group that you will be like to post in."
-            bot.send_message(chat_id, start_message, reply_markup=InlineKeyboardMarkup(buttons))
-            return
+    
+        buttons = []
+        for key in list(db.project.find()):
+            row = []
+            button = InlineKeyboardButton(key["group_name"], callback_data=f'Chosen Group {key["group_name"]}')
+            row.append(button)
+            buttons.append(row)
+        start_message += "Select a group that you will be like to post in."
+        bot.send_message(chat_id, start_message, reply_markup=InlineKeyboardMarkup(buttons))
+
 
 ###### Function used to handle Callback #########
 @bot.callback_query_handler(func=lambda call: True)
@@ -59,14 +62,20 @@ def handle_callback(call):
     return
 
 def send_message_logic(chat_id, group_name, user):
-    # Error Handling
-    if db.project.find_one({"group_name": group_name}) == None:
-        bot.send_message(chat_id, "No such group found. Please activate the bot in the group.")
-        return
-
-    group_id = db.project.find_one({"group_name": group_name})["group_id"]
-    bot.send_message(group_id, f'{user} is testing out the bot. Please bear with me')
+    information = {"name": user}
+    db.project.find_one_and_update({"group_name": group_name}, {"$set": {"user": information}})
+    bot.send_message(chat_id, f'You have chosen the group {group_name} to post the images. To proceed with uploading of seccrets, type /secrets')
     return
 
+@bot.message_handler(func=lambda message: message.text is not None, content_types=["text"])
+def handle_text_doc(message):
+    chat_id = message.chat.id
+
+    if message.chat.type == "private":
+        if "secret" not in message.text:
+            bot.send_message(chat_id, "Sorry I do not understand the message")
+            return
+        else:
+            bot.reply_to(message, f'Your secret of {message.text} had been stored')
 
 bot.infinity_polling()
